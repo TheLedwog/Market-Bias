@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "15 22 * * 1-5"
   workflow_dispatch:
+  
+permissions:
+  contents: write
 
 jobs:
   run-evaluation:
@@ -21,3 +24,12 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
       - run: python run_evaluation.py
+
+      - name: Commit DB (persist memory)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          git add memory/daily_log.db config/signal_weights.json || true
+          git commit -m "Update memory + weights (evaluation)" || echo "No changes to commit"
+          git push
