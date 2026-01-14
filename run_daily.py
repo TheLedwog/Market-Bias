@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from agent.signal_extractor import extract_signals
 from agent.bias_engine import compute_bias
 from dotenv import load_dotenv
+from delivery.telegram import send_telegram
 
 load_dotenv()
 
@@ -81,3 +82,9 @@ if __name__ == "__main__":
     log_decision(bias, confidence, signals, score)
 
     print(f"Bias: {bias} | Confidence: {confidence}%")
+    msg = (
+    f"📊 US Futures Bias\n\n"
+    f"Bias: {bias}\n"
+    f"Confidence: {confidence}%\n"
+    )
+    send_telegram(msg)
