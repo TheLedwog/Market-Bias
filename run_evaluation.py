@@ -4,6 +4,9 @@ import requests
 from datetime import datetime, timedelta
 
 from agent.learner import update_weights
+from delivery.telegram import send_telegram
+
+
 
 DB_PATH = "memory/daily_log.db"
 
@@ -117,3 +120,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    send_telegram(f"✅ Evaluation\n{date_iso} | Outcome: {outcome}\nSPX: {spx_ret:.2f}% | NDX: {ndx_ret:.2f}%")
