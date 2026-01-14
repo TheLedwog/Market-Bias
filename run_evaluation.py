@@ -94,7 +94,10 @@ def main():
         return
 
     date_iso, bias, signals_json = row
-    signals = json.loads(signals_json)
+    
+    analysis = json.loads(signals_json)
+    signals = analysis.get("signals", {})
+
 
     spx_ret = fetch_stooq_daily_return("^spx", date_iso)
     ndx_ret = fetch_stooq_daily_return("^ndx", date_iso)
