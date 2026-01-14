@@ -4,68 +4,87 @@ import time
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
-# Load environment variables
 load_dotenv()
-
-# OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Signals we care about
-SIGNALS = [
-    "fed_tone",
-    "yields",
-    "earnings",
-    "risk_sentiment",
-    "macro_data"
-]
+SIGNALS = ["fed_tone", "yields", "earnings", "risk_sentiment", "macro_data"]
 
-def extract_signals(news_text: str) -> dict:
+def extract_analysis(news_text: str) -> dict:
+    """
+    Returns a dict with:
+      - signals: dict of SIGNALS -> bullish/bearish/neutral
+      - drivers: list[str] (3 short bullets)
+      - key_risk: str (1 short line)
+      - index_tilt: dict { "ES": bullish/bearish/neutral, "NQ": bullish/bearish/neutral }
+    """
+
     prompt = f"""
-Extract ONLY these signals:
-{SIGNALS}
+You are a professional US index futures trader.
 
-Each must be one of: bullish, bearish, neutral.
-If unclear, use neutral.
+From the NEWS below, produce STRICT JSON with exactly these keys:
+- "signals": object with keys {SIGNALS} and values only "bullish", "bearish", or "neutral"
+- "drivers": array of exactly 3 short bullet-style strings (no numbering, no emojis)
+- "key_risk": one short, SPECIFIC line describing the most likely condition that would INVALIDATE the bias today. 
+  This should be concrete (e.g. yields, Fed speakers, index behaviour) and not generic.
+  Avoid vague phrasing like "unexpected data" or "sentiment shift".
+- "index_tilt": object with keys "ES" and "NQ", each "bullish"/"bearish"/"neutral"
 
-Return JSON with exactly these keys and string values.
+Rules:
+- If unclear, use "neutral".
+- Keep drivers specific to the news (not generic).
+- Return JSON only. No markdown. No extra text.
+
+NEWS:
+{news_text}
 """
 
-    print("🚀 CALLING OPENAI API NOW")
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Return only valid JSON. No markdown. No extra text."},
-            {"role": "user", "content": prompt + "\n\nNEWS:\n" + news_text}
-        ],
-        temperature=0,
-        response_format={"type": "json_object"},
-    )
-
-    data = json.loads(resp.choices[0].message.content)
-
-    # Ensure all keys exist; fill missing with neutral
-    return {k: data.get(k, "neutral") for k in SIGNALS}
-
-
-    # Try up to 3 times (handles rate limits gracefully)
-    for attempt in range(3):
+    for _ in range(3):
         try:
             resp = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0
+                temperature=0,
+                response_format={"type": "json_object"},
             )
+            data = json.loads(resp.choices[0].message.content)
 
-            return json.loads(resp.choices[0].message.content)
+            # Defensive defaults
+            signals = data.get("signals", {})
+            signals = {k: signals.get(k, "neutral") for k in SIGNALS}
+
+            drivers = data.get("drivers", [])
+            if not isinstance(drivers, list):
+                drivers = []
+            drivers = [str(x).strip() for x in drivers if str(x).strip()][:3]
+            while len(drivers) < 3:
+                drivers.append("No clear additional driver from headlines.")
+
+            key_risk = str(data.get("key_risk", "Key risk: unexpected macro/earnings surprise.")).strip()
+
+            index_tilt = data.get("index_tilt", {})
+            if not isinstance(index_tilt, dict):
+                index_tilt = {}
+            index_tilt = {
+                "ES": index_tilt.get("ES", "neutral"),
+                "NQ": index_tilt.get("NQ", "neutral"),
+            }
+
+            return {
+                "signals": signals,
+                "drivers": drivers,
+                "key_risk": key_risk,
+                "index_tilt": index_tilt,
+            }
 
         except RateLimitError:
-            print("⚠️ OpenAI rate limit hit. Retrying...")
             time.sleep(5)
-
-        except json.JSONDecodeError:
-            print("⚠️ Invalid JSON from model. Retrying...")
+        except Exception:
             time.sleep(2)
 
-    # Fallback if all retries fail
-    print("⚠️ Using fallback neutral signals.")
-    return {signal: "neutral" for signal in SIGNALS}
+    # Fallback
+    return {
+        "signals": {k: "neutral" for k in SIGNALS},
+        "drivers": ["Fallback: no analysis available."] * 3,
+        "key_risk": "Fallback: model unavailable or quota limited.",
+        "index_tilt": {"ES": "neutral", "NQ": "neutral"},
+    }
