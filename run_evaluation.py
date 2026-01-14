@@ -120,7 +120,9 @@ def main():
 
 
     print(f"{date_iso} | Bias={bias} | SPX={spx_ret:.2f}% | NDX={ndx_ret:.2f}% | Outcome={outcome}")
+    send_telegram(f"✅ Evaluation\n{date_iso} | Outcome: {outcome}\nSPX: {spx_ret:.2f}% | NDX: {ndx_ret:.2f}%")
 
 if __name__ == "__main__":
     main()
-    send_telegram(f"✅ Evaluation\n{date_iso} | Outcome: {outcome}\nSPX: {spx_ret:.2f}% | NDX: {ndx_ret:.2f}%")
+    
+
