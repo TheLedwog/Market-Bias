@@ -60,29 +60,28 @@ def fetch_stooq_daily_return(symbol: str, date_iso: str) -> float:
     return (close_today - close_prev) / close_prev * 100.0
 
 def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
-    THRESH = 0.25  # treat moves within ±0.25% as "flat/noise"
+    THRESH = 0.25
 
     def direction(x: float) -> str:
         if x > THRESH:
-            return "Bullish"
+            return "bullish"
         if x < -THRESH:
-            return "Bearish"
-        return "Flat"
+            return "bearish"
+        return "flat"
 
     spx_dir = direction(spx_ret)
     ndx_dir = direction(ndx_ret)
 
-    # If both are flat, it's a no-signal day (no learning)
-    if spx_dir == "Flat" and ndx_dir == "Flat":
+    if spx_dir == "flat" and ndx_dir == "flat":
         return "no_signal"
 
-    # Correct only if both confirm the bias
-    if bias == "Bullish" and spx_dir == "Bullish" and ndx_dir == "Bullish":
+    if bias == "bullish" and spx_dir == "bullish" and ndx_dir == "bullish":
         return "correct"
-    if bias == "Bearish" and spx_dir == "Bearish" and ndx_dir == "Bearish":
+    if bias == "bearish" and spx_dir == "bearish" and ndx_dir == "bearish":
         return "correct"
 
     return "incorrect"
+
 
 
 def main():
@@ -127,5 +126,6 @@ def main():
 if __name__ == "__main__":
     main()
     
+
 
 
