@@ -2,15 +2,16 @@ name: US Futures Evaluation
 
 on:
   schedule:
-    - cron: "15 22 * * 1-5"
+    - cron: "30 22 * * 1-5" # 22:30 UTC, Mon–Fri
   workflow_dispatch:
-  
+
 permissions:
   contents: write
 
 jobs:
   run-evaluation:
     runs-on: ubuntu-latest
+
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
@@ -18,18 +19,29 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: python run_evaluation.py
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Commit DB (persist memory)
+      # Pull latest BEFORE scripts modify files
+      - name: Sync repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run evaluation
+        run: python run_evaluation.py
+
+      - name: Commit memory + weights
+        run: |
           git add memory/daily_log.db config/signal_weights.json || true
           git commit -m "Update memory + weights (evaluation)" || echo "No changes to commit"
           git push
