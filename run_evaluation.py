@@ -94,6 +94,8 @@ def main():
         return
 
     date_iso, bias, signals_json = row
+    bias = (bias or "").strip().lower()
+
     
     analysis = json.loads(signals_json)
     signals = analysis.get("signals", {})
@@ -125,4 +127,5 @@ def main():
 if __name__ == "__main__":
     main()
     
+
 
