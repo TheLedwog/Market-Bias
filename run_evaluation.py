@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from agent.learner import update_weights
 from delivery.telegram import send_telegram
 
+print("✅ run_evaluation.py started", flush=True)
 
 
 DB_PATH = "memory/daily_log.db"
@@ -75,6 +76,8 @@ def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
 
 
 def main():
+    print("✅ main() entered", flush=True)
+
     conn = sqlite3.connect(DB_PATH)
     row = get_last_unscored_day(conn)
 
@@ -151,6 +154,7 @@ def main():
     send_telegram(msg)
 
     
+
 
 
 
