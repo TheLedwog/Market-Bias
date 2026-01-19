@@ -104,8 +104,9 @@ def main():
     signals = analysis.get("signals", {})
 
 
-    spx_ret = fetch_stooq_open_close_return("SPY", date_iso)
-    ndx_ret = fetch_stooq_open_close_return("QQQ", date_iso)
+    spx_ret = fetch_stooq_open_close_return("SPY.US", date_iso)
+    ndx_ret = fetch_stooq_open_close_return("QQQ.US", date_iso)
+
 
 
     outcome = judge_outcome(bias, spx_ret, ndx_ret)
@@ -135,6 +136,7 @@ def main():
 if __name__ == "__main__":
     main()
     
+
 
 
 
