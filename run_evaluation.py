@@ -73,6 +73,29 @@ def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
 
     return "incorrect"
 
+def classify_skip_reason(date_iso: str) -> str:
+    """
+    Distinguish between:
+    - US cash market closed (holiday/weekend)
+    - Data not posted yet
+    """
+    target = datetime.fromisoformat(date_iso).date()
+    weekday = target.weekday()  # Mon=0, Sun=6
+
+    # Weekend
+    if weekday >= 5:
+        return "US cash market closed (weekend)"
+
+    # Check if previous trading day has data
+    prev_day = target - timedelta(days=1)
+
+    spy_prev = fetch_stooq_open_close_return("SPY.US", prev_day.isoformat())
+    qqq_prev = fetch_stooq_open_close_return("QQQ.US", prev_day.isoformat())
+
+    if spy_prev is not None and qqq_prev is not None:
+        return "US cash market closed (likely holiday)"
+
+    return "Cash session data not posted yet"
 
 
 def main():
@@ -111,14 +134,17 @@ def main():
         conn.commit()
         conn.close()
 
+        reason = classify_skip_reason(date_iso)
+
         msg = (
-            f"ℹ️ Evaluation skipped (cash session closed)\n"
-            f"{date_iso}\n"
-            f"No SPY/QQQ RTH bar available (US equities holiday/weekend or data not posted yet)."
+            f"ℹ️ Evaluation skipped\n\n"
+            f"Date: {date_iso}\n"
+            f"Reason: {reason}"
         )
         print(msg)
         send_telegram(msg)
         return
+
 
     # Reuse the existing naming in the DB columns
     spx_ret = spy_ret
@@ -157,6 +183,7 @@ if __name__ == "__main__":
     main()
 
     
+
 
 
 
