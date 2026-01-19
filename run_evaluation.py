@@ -104,8 +104,9 @@ def main():
     signals = analysis.get("signals", {})
 
 
-    spx_ret = fetch_stooq_daily_return("^spx", date_iso)
-    ndx_ret = fetch_stooq_daily_return("^ndx", date_iso)
+    spx_ret = fetch_stooq_open_close_return("SPY", date_iso)
+    ndx_ret = fetch_stooq_open_close_return("QQQ", date_iso)
+
 
     outcome = judge_outcome(bias, spx_ret, ndx_ret)
 
@@ -124,12 +125,17 @@ def main():
         print("No learning applied (flat/no-signal day).")
 
 
-    print(f"{date_iso} | Bias={bias} | SPX={spx_ret:.2f}% | NDX={ndx_ret:.2f}% | Outcome={outcome}")
-    send_telegram(f"✅ Evaluation\n{date_iso} | Outcome: {outcome}\nSPX: {spx_ret:.2f}% | NDX: {ndx_ret:.2f}%")
+    print(f"{date_iso} | Bias={bias} | SPY(RTH)={spx_ret:.2f}% | QQQ(RTH)={ndx_ret:.2f}% | Outcome={outcome}")
+    send_telegram(
+        f"✅ Evaluation (NY RTH proxy)\n"
+        f"{date_iso} | Outcome: {outcome}\n"
+        f"SPY (O->C): {spx_ret:.2f}% | QQQ (O->C): {ndx_ret:.2f}%"
+    )
 
 if __name__ == "__main__":
     main()
     
+
 
 
 
