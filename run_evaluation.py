@@ -18,49 +18,35 @@ def get_last_unscored_day(conn):
     return c.fetchone()
 
 
-def fetch_stooq_open_close_return(symbol: str, date_iso: str) -> float:
+def fetch_stooq_open_close_return(symbol: str, date_iso: str):
     """
-    Fetch RTH open-to-close % return for the trading day on/after date_iso.
-    Using Stooq daily bars for US ETFs:
-      SPY = S&P 500 ETF (RTH)
-      QQQ = Nasdaq 100 ETF (RTH)
+    Returns open->close % return for EXACT date_iso using Stooq daily bars.
+    Returns None if there is no bar for that date (holiday/weekend/data not available yet).
     """
-    url = STOOQ_CSV.format(symbol=symbol.lower())  # stooq uses lowercase
+    url = STOOQ_CSV.format(symbol=symbol.lower())
     r = requests.get(url, timeout=30)
     r.raise_for_status()
 
     lines = r.text.strip().splitlines()
-    # header: Date,Open,High,Low,Close,Volume
-    rows = []
+    if len(lines) < 2:
+        return None
+
+    target = datetime.fromisoformat(date_iso).date()
+
+    # Stooq CSV is usually ascending; we just scan for the exact date
     for line in lines[1:]:
         parts = line.split(",")
         if len(parts) < 5:
             continue
-        d = parts[0]
-        o = float(parts[1])
-        c = float(parts[4])
-        rows.append((d, o, c))
 
-    if len(rows) < 1:
-        raise RuntimeError(f"Not enough data from Stooq for {symbol}")
+        d = datetime.fromisoformat(parts[0]).date()
+        if d == target:
+            o = float(parts[1])
+            c = float(parts[4])
+            return (c - o) / o * 100.0
 
-    target = datetime.fromisoformat(date_iso).date()
+    return None
 
-    # rows are ascending by date in stooq download
-    idx = None
-    for i, (d, o, c) in enumerate(rows):
-        d_date = datetime.fromisoformat(d).date()
-        if d_date >= target:
-            idx = i
-            break
-
-    if idx is None:
-        raise RuntimeError(f"No suitable date found for {symbol} around {date_iso}")
-
-    open_px = rows[idx][1]
-    close_px = rows[idx][2]
-
-    return (close_px - open_px) / open_px * 100.0
 
 
 def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
@@ -94,20 +80,46 @@ def main():
 
     if not row:
         print("No unscored days found.")
+        conn.close()
         return
 
     date_iso, bias, signals_json = row
+
+    # Normalise bias so casing/spaces can’t break outcome checks
     bias = (bias or "").strip().lower()
 
-    
     analysis = json.loads(signals_json)
     signals = analysis.get("signals", {})
 
+    # NY cash-session proxy returns (open -> close) for that exact date
+    spy_ret = fetch_stooq_open_close_return("SPY.US", date_iso)
+    qqq_ret = fetch_stooq_open_close_return("QQQ.US", date_iso)
 
-    spx_ret = fetch_stooq_open_close_return("SPY.US", date_iso)
-    ndx_ret = fetch_stooq_open_close_return("QQQ.US", date_iso)
+    # If there is no cash-session bar (holiday/weekend/no data yet), skip evaluation safely
+    if spy_ret is None or qqq_ret is None:
+        outcome = "no_cash_session"
 
+        c = conn.cursor()
+        c.execute("""
+            UPDATE log
+            SET spx_close_return=?, ndx_close_return=?, outcome=?
+            WHERE date=?
+        """, (spy_ret, qqq_ret, outcome, date_iso))
+        conn.commit()
+        conn.close()
 
+        msg = (
+            f"ℹ️ Evaluation skipped (cash session closed)\n"
+            f"{date_iso}\n"
+            f"No SPY/QQQ RTH bar available (US equities holiday/weekend or data not posted yet)."
+        )
+        print(msg)
+        send_telegram(msg)
+        return
+
+    # Reuse the existing naming in the DB columns
+    spx_ret = spy_ret
+    ndx_ret = qqq_ret
 
     outcome = judge_outcome(bias, spx_ret, ndx_ret)
 
@@ -120,22 +132,26 @@ def main():
     conn.commit()
     conn.close()
 
+    # Learning (only when outcome is informative)
     if outcome in ("correct", "incorrect"):
         update_weights(signals, correct=(outcome == "correct"))
     else:
         print("No learning applied (flat/no-signal day).")
 
+    print(f"{date_iso} | Bias={bias} | SPY(O->C)={spx_ret:.2f}% | QQQ(O->C)={ndx_ret:.2f}% | Outcome={outcome}")
 
-    print(f"{date_iso} | Bias={bias} | SPY(RTH)={spx_ret:.2f}% | QQQ(RTH)={ndx_ret:.2f}% | Outcome={outcome}")
-    send_telegram(
-        f"✅ Evaluation (NY RTH proxy)\n"
-        f"{date_iso} | Outcome: {outcome}\n"
-        f"SPY (O->C): {spx_ret:.2f}% | QQQ (O->C): {ndx_ret:.2f}%"
+    msg = (
+        f"✅ Evaluation (NY RTH proxy)\n\n"
+        f"Date: {date_iso}\n"
+        f"Bias: {bias}\n"
+        f"Outcome: {outcome}\n\n"
+        f"SPY (O->C): {spx_ret:.2f}%\n"
+        f"QQQ (O->C): {ndx_ret:.2f}%"
     )
+    send_telegram(msg)
 
-if __name__ == "__main__":
-    main()
     
+
 
 
 
