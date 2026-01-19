@@ -17,14 +17,15 @@ def get_last_unscored_day(conn):
     c.execute("SELECT date, bias, signals FROM log WHERE outcome IS NULL ORDER BY date ASC LIMIT 1")
     return c.fetchone()
 
-def fetch_stooq_daily_return(symbol: str, date_iso: str) -> float:
+
+def fetch_stooq_open_close_return(symbol: str, date_iso: str) -> float:
     """
-    Fetch close-to-close % return for the trading day on/after date_iso.
-    Uses Stooq symbols:
-      ^spx = S&P 500
-      ^ndx = Nasdaq 100
+    Fetch RTH open-to-close % return for the trading day on/after date_iso.
+    Using Stooq daily bars for US ETFs:
+      SPY = S&P 500 ETF (RTH)
+      QQQ = Nasdaq 100 ETF (RTH)
     """
-    url = STOOQ_CSV.format(symbol=symbol)
+    url = STOOQ_CSV.format(symbol=symbol.lower())  # stooq uses lowercase
     r = requests.get(url, timeout=30)
     r.raise_for_status()
 
@@ -35,29 +36,32 @@ def fetch_stooq_daily_return(symbol: str, date_iso: str) -> float:
         parts = line.split(",")
         if len(parts) < 5:
             continue
-        rows.append((parts[0], float(parts[4])))
+        d = parts[0]
+        o = float(parts[1])
+        c = float(parts[4])
+        rows.append((d, o, c))
 
-    if len(rows) < 2:
+    if len(rows) < 1:
         raise RuntimeError(f"Not enough data from Stooq for {symbol}")
 
     target = datetime.fromisoformat(date_iso).date()
 
-    # find first row with date >= target, then use prior row for prev close
     # rows are ascending by date in stooq download
     idx = None
-    for i, (d, close) in enumerate(rows):
+    for i, (d, o, c) in enumerate(rows):
         d_date = datetime.fromisoformat(d).date()
         if d_date >= target:
             idx = i
             break
 
-    if idx is None or idx == 0:
+    if idx is None:
         raise RuntimeError(f"No suitable date found for {symbol} around {date_iso}")
 
-    close_today = rows[idx][1]
-    close_prev = rows[idx - 1][1]
+    open_px = rows[idx][1]
+    close_px = rows[idx][2]
 
-    return (close_today - close_prev) / close_prev * 100.0
+    return (close_px - open_px) / open_px * 100.0
+
 
 def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
     THRESH = 0.25
@@ -126,6 +130,7 @@ def main():
 if __name__ == "__main__":
     main()
     
+
 
 
 
