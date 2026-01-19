@@ -40,6 +40,10 @@ jobs:
       - name: Run evaluation
         run: python -u run_evaluation.py
 
+      - name: Telegram test ping
+        run: python -c "from delivery.telegram import send_telegram; send_telegram('✅ Telegram ping from evaluation workflow')"
+
+
       - name: Commit memory + weights
         run: |
           git add memory/daily_log.db config/signal_weights.json || true
