@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import json
 import requests
 from datetime import datetime, timezone
 
@@ -10,8 +11,8 @@ from delivery.telegram import send_telegram
 
 DB_PATH = "memory/daily_log.db"
 WEIGHTS_PATH = "config/signal_weights.json"
-
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
+
 
 def init_db():
     os.makedirs("memory", exist_ok=True)
@@ -31,6 +32,7 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+
 
 def fetch_news() -> str:
     if not NEWS_API_KEY:
@@ -53,80 +55,102 @@ def fetch_news() -> str:
     titles = [t for t in titles if t]
     return " | ".join(titles) if titles else "No headlines returned."
 
+
 def log_decision(date_iso: str, bias: str, confidence: float, analysis: dict, score: float):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
       INSERT OR REPLACE INTO log (date, bias, confidence, signals, score, spx_close_return, ndx_close_return, outcome)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (date_iso, bias, confidence, __import__("json").dumps(analysis), score, None, None, None))
+    """, (date_iso, bias, confidence, json.dumps(analysis), score, None, None, None))
     conn.commit()
     conn.close()
+
+
+def clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
 
 def main():
     init_db()
     date_iso = datetime.now(timezone.utc).date().isoformat()
 
+    # 1) Fetch news and extract AI signals + briefing
     news = fetch_news()
     analysis = extract_signals(news)
     analysis.setdefault("signals", {})
     analysis.setdefault("drivers", [])
     analysis.setdefault("key_risk", "")
 
-    # --- Polymarket SPX up/down signal ---
+    # 2) Base score from your discrete AI signals + weights
+    weights = load_weights(WEIGHTS_PATH)
+    score_base = score_signals(analysis["signals"], weights)
+
+    # 3) Polymarket numeric boost (crowd tilt)
+    pm_boost = 0.0
     pm = find_spx_up_down_probs_for_today()
-    print("DEBUG Polymarket:", pm, flush=True)
 
-    if pm:
-        p_up = pm["up"]
-        p_down = pm["down"]
+    if pm and "up" in pm and "down" in pm:
+        p_up = float(pm["up"])
+        p_down = float(pm["down"])
 
-        # Convert probability -> signal
-        if p_up >= 0.60:
-            analysis["signals"]["polymarket_spx"] = "bullish"
-        elif p_down >= 0.60:
-            analysis["signals"]["polymarket_spx"] = "bearish"
-        else:
-            analysis["signals"]["polymarket_spx"] = "neutral"
+        # Convert probability to a centered tilt:
+        # 50% => 0.0, 95% => +0.9, 5% => -0.9
+        tilt = (p_up - 0.5) * 2.0  # [-1, +1]
+
+        # Weight/cap so it can't completely dominate everything
+        PM_WEIGHT = 1.0           # tune: 0.5–1.5 typical
+        PM_CAP = 1.0              # max absolute boost
+        pm_boost = clamp(tilt * PM_WEIGHT, -PM_CAP, PM_CAP)
 
         analysis["polymarket"] = {
             "spx_up_prob": round(p_up, 3),
             "spx_down_prob": round(p_down, 3),
+            "tilt": round(tilt, 3),
+            "score_boost": round(pm_boost, 3),
             "event_title": pm.get("title", ""),
-            "event_slug": pm.get("event_slug", "")
+            "event_slug": pm.get("event_slug", ""),
         }
     else:
-        analysis["signals"]["polymarket_spx"] = "neutral"
-        analysis["polymarket"] = {"note": "Polymarket SPX market not found or API unavailable."}
+        analysis["polymarket"] = {
+            "note": "Polymarket SPX market not found or API unavailable.",
+            "score_boost": 0.0
+        }
 
-    weights = load_weights(WEIGHTS_PATH)
-    score = score_signals(analysis["signals"], weights)
+    # 4) Final score = base + polymarket boost
+    score = score_base + pm_boost
+
+    # 5) Convert score -> bias + confidence
     bias, confidence = bias_from_score(score)
 
+    # 6) Persist decision
     log_decision(date_iso, bias, confidence, analysis, score)
 
-    # Telegram message
-    pm_line = ""
-    if pm:
-        pm_line = f"\nPolymarket SPX: Up {pm['up']*100:.1f}% / Down {pm['down']*100:.1f}%"
-    else:
-        pm_line = "\nPolymarket SPX: unavailable"
-
+    # 7) Telegram message
     drivers = analysis.get("drivers") or []
     drivers_txt = "\n".join([f"• {d}" for d in drivers[:5]]) if drivers else "• (none)"
+
+    if pm and "up" in pm and "down" in pm:
+        pm_line = (
+            f"Polymarket SPX: Up {pm['up']*100:.1f}% / Down {pm['down']*100:.1f}%\n"
+            f"Polymarket boost: {pm_boost:+.2f}"
+        )
+    else:
+        pm_line = "Polymarket SPX: unavailable\nPolymarket boost: +0.00"
 
     msg = (
         "📊 US Futures Bias\n\n"
         f"Bias: {bias} | Confidence: {confidence:.1f}%\n"
-        f"Score: {score:.2f}"
+        f"Score: {score:.2f} (base {score_base:.2f} + pm {pm_boost:+.2f})\n"
         f"{pm_line}\n\n"
         "Drivers:\n"
         f"{drivers_txt}\n\n"
         f"Key risk: {analysis.get('key_risk','')}"
     )
-    print(msg)
+
+    print(msg, flush=True)
     send_telegram(msg)
+
 
 if __name__ == "__main__":
     main()
-
