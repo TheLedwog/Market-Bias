@@ -1,30 +1,30 @@
 import json
+import os
 
-WEIGHT_FILE = "config/signal_weights.json"
+WEIGHTS_PATH = os.path.join("config", "signal_weights.json")
 
-def update_weights(signals: dict, correct: bool):
+def update_weights(signals: dict, correct: bool, lr: float = 0.03) -> None:
     """
-    Adjust signal weights based on outcome.
-    Reinforces signals that were correct and penalises those that were wrong.
+    If correct => slightly increase weights for aligned signals.
+    If incorrect => slightly decrease weights for aligned signals.
     """
+    try:
+        with open(WEIGHTS_PATH, "r", encoding="utf-8") as f:
+            weights = json.load(f)
+    except Exception:
+        weights = {}
 
-    with open(WEIGHT_FILE, "r") as f:
-        weights = json.load(f)
+    direction = 1.0 if correct else -1.0
 
-    for signal, direction in signals.items():
-        # Ignore neutral signals
-        if direction == "neutral":
+    for k, v in (signals or {}).items():
+        vv = (v or "").strip().lower()
+        if vv not in ("bullish", "bearish"):
             continue
 
-        if correct:
-            weights[signal] *= 1.02
-        else:
-            weights[signal] *= 0.95
+        cur = float(weights.get(k, 0.0))
+        # adjust magnitude only
+        weights[k] = max(0.0, cur + lr * direction)
 
-    # Normalise weights so weights sum to 1
-    total = sum(weights.values())
-    for k in weights:
-        weights[k] = weights[k] / total
-
-    with open(WEIGHT_FILE, "w") as f:
+    with open(WEIGHTS_PATH, "w", encoding="utf-8") as f:
         json.dump(weights, f, indent=2)
+
