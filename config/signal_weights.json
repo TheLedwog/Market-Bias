@@ -9,5 +9,6 @@
   "earnings_negative": 0.8,
   "geopolitics_risk": 0.8,
   "liquidity_stress": 1.0,
-  "polymarket_spx": 0.6
+  "polymarket_spx": 0.6,
+  "risk_sentiment": 0.0
 }
