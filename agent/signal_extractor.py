@@ -53,10 +53,11 @@ News:
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
+            response_format={"type": "json_object"},
         )
         txt = resp.choices[0].message.content.strip()
         try:
-            return json.loads(txt)
+            return json.loads(resp.choices[0].message.content)
         except Exception:
             continue
 
@@ -65,3 +66,4 @@ News:
         "drivers": ["Model did not return valid JSON; using fallback."],
         "key_risk": "No model inference ran."
     }
+
