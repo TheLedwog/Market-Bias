@@ -1,87 +1,77 @@
+import json
 import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 GAMMA = "https://gamma-api.polymarket.com"
 
+
 def _ny_today():
     return datetime.now(tz=ZoneInfo("America/New_York")).date()
 
-def find_spx_up_down_probs_for_today() -> dict | None:
+
+def _coerce_list_field(x):
     """
-    Uses Gamma public-search to find today's SPX Up/Down event and extract outcome probabilities.
-    Returns dict like {"up": 0.55, "down": 0.45, "title": "...", "event_slug": "..."} or None.
+    Gamma /markets returns outcomes/outcomePrices sometimes as a JSON string.
+    This converts them to Python lists safely.
     """
-    ny_date = _ny_today()
-    # Polymarket titles usually look like: "S&P 500 (SPX) Up or Down on January 26?"
-    date_str = f"{ny_date.strftime('%B')} {ny_date.day}"
-    query = f"S&P 500 (SPX) Up or Down on {date_str}"
+    if x is None:
+        return None
+    if isinstance(x, list):
+        return x
+    if isinstance(x, str):
+        s = x.strip()
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                return json.loads(s)
+            except Exception:
+                return None
+    return None
+
+
+def get_spx_up_down_probs_for_today() -> dict | None:
+    """
+    Fetch today's market: "S&P 500 (SPX) Up or Down on <Month Day>?"
+    by constructing the event slug and calling:
+      GET https://gamma-api.polymarket.com/markets?slug=<slug>
+    Returns:
+      {"up": 0.xx, "down": 0.xx, "title": "...", "slug": "..."} or None
+    """
+    ny = _ny_today()
+    month = ny.strftime("%B").lower()   # january
+    day = ny.day                        # 26
+    year = ny.year                      # 2026
+
+    slug = f"spx-up-or-down-on-{month}-{day}-{year}"
 
     try:
         r = requests.get(
-            f"{GAMMA}/public-search",
-            params={"q": query, "limit_per_type": 25, "search_profiles": False, "search_tags": False},
+            f"{GAMMA}/markets",
+            params={"slug": [slug]},     # slug is an array filter per docs
             timeout=25,
         )
         r.raise_for_status()
-        data = r.json()
+        markets = r.json()
     except Exception:
         return None
 
-    events = data.get("events") or []
-    if not events:
-        print(f"⚠️ Polymarket search returned 0 events for query: {query}", flush=True)
-        return None
-
-    # Choose best matching event by title contains query (case-insensitive), then max volume
-    query_lower = query.lower()
-    candidates = []
-    for ev in events:
-        title = (ev.get("title") or "").lower()
-        if query_lower in title:
-            candidates.append(ev)
-
-    if not candidates:
-        candidates = events
-
-    def ev_volume(ev):
-        try:
-            return float(ev.get("volume") or ev.get("volumeNum") or 0)
-        except Exception:
-            return 0.0
-
-    best_event = max(candidates, key=ev_volume)
-
-    # The /public-search event object includes nested markets in docs
-    markets = best_event.get("markets") or []
     if not markets:
         return None
 
-    # Pick the market that looks like Up/Down with outcomes + prices and max volume
-    m_candidates = []
-    for m in markets:
-        outcomes = m.get("outcomes") or []
-        prices = m.get("outcomePrices") or []
-        if isinstance(outcomes, str) or isinstance(prices, str):
-            # Some responses stringify arrays; ignore for safety
-            continue
-        out_set = {str(x).strip().lower() for x in outcomes}
-        if "up" in out_set and "down" in out_set and len(outcomes) == len(prices) and len(outcomes) >= 2:
-            m_candidates.append(m)
-
-    if not m_candidates:
-        return None
-
-    def m_volume(m):
+    # If multiple, take highest volume
+    def vol(m):
         try:
-            return float(m.get("volume") or m.get("volumeNum") or 0)
+            return float(m.get("volume") or 0)
         except Exception:
             return 0.0
 
-    best_m = max(m_candidates, key=m_volume)
+    m = max(markets, key=vol)
 
-    outcomes = best_m.get("outcomes") or []
-    prices = best_m.get("outcomePrices") or []
+    outcomes = _coerce_list_field(m.get("outcomes"))
+    prices = _coerce_list_field(m.get("outcomePrices"))
+
+    if not outcomes or not prices or len(outcomes) != len(prices):
+        return None
 
     probs = {}
     for name, px in zip(outcomes, prices):
@@ -103,7 +93,6 @@ def find_spx_up_down_probs_for_today() -> dict | None:
     return {
         "up": up,
         "down": down,
-        "title": best_event.get("title") or "",
-        "event_slug": best_event.get("slug") or ""
+        "title": m.get("question") or m.get("title") or "",
+        "slug": slug,
     }
-
