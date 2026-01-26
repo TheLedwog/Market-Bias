@@ -18,12 +18,7 @@ def get_last_unscored_day(conn):
     c.execute("SELECT date, bias, signals FROM log WHERE outcome IS NULL ORDER BY date ASC LIMIT 1")
     return c.fetchone()
 
-
 def fetch_stooq_open_close_return(symbol: str, date_iso: str):
-    """
-    Returns open->close % return for EXACT date_iso using Stooq daily bars.
-    Returns None if there is no bar for that date (holiday/weekend/data not available yet).
-    """
     url = STOOQ_CSV.format(symbol=symbol.lower())
     r = requests.get(url, timeout=30)
     r.raise_for_status()
@@ -34,12 +29,10 @@ def fetch_stooq_open_close_return(symbol: str, date_iso: str):
 
     target = datetime.fromisoformat(date_iso).date()
 
-    # Stooq CSV is usually ascending; we just scan for the exact date
     for line in lines[1:]:
         parts = line.split(",")
         if len(parts) < 5:
             continue
-
         d = datetime.fromisoformat(parts[0]).date()
         if d == target:
             o = float(parts[1])
@@ -47,8 +40,6 @@ def fetch_stooq_open_close_return(symbol: str, date_iso: str):
             return (c - o) / o * 100.0
 
     return None
-
-
 
 def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
     THRESH = 0.25
@@ -73,58 +64,30 @@ def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
 
     return "incorrect"
 
-def classify_skip_reason(date_iso: str) -> str:
-    """
-    Distinguish between:
-    - US cash market closed (holiday/weekend)
-    - Data not posted yet
-    """
-    target = datetime.fromisoformat(date_iso).date()
-    weekday = target.weekday()  # Mon=0, Sun=6
-
-    # Weekend
-    if weekday >= 5:
-        return "US cash market closed (weekend)"
-
-    # Check if previous trading day has data
-    prev_day = target - timedelta(days=1)
-
-    spy_prev = fetch_stooq_open_close_return("SPY.US", prev_day.isoformat())
-    qqq_prev = fetch_stooq_open_close_return("QQQ.US", prev_day.isoformat())
-
-    if spy_prev is not None and qqq_prev is not None:
-        return "US cash market closed (likely holiday)"
-
-    return "Cash session data not posted yet"
-
-
 def main():
-    print("✅ main() entered", flush=True)
+    print("✅ run_evaluation.py started", flush=True)
 
     conn = sqlite3.connect(DB_PATH)
     row = get_last_unscored_day(conn)
 
     if not row:
-        print("No unscored days found.")
+        msg = "ℹ️ Evaluation complete\nNo unscored days found."
+        print(msg)
+        send_telegram(msg)
         conn.close()
         return
 
-    date_iso, bias, signals_json = row
-
-    # Normalise bias so casing/spaces can’t break outcome checks
-    bias = (bias or "").strip().lower()
+    date_iso, bias_raw, signals_json = row
+    bias = (bias_raw or "").strip().lower()
 
     analysis = json.loads(signals_json)
     signals = analysis.get("signals", {})
 
-    # NY cash-session proxy returns (open -> close) for that exact date
     spy_ret = fetch_stooq_open_close_return("SPY.US", date_iso)
     qqq_ret = fetch_stooq_open_close_return("QQQ.US", date_iso)
 
-    # If there is no cash-session bar (holiday/weekend/no data yet), skip evaluation safely
     if spy_ret is None or qqq_ret is None:
         outcome = "no_cash_session"
-
         c = conn.cursor()
         c.execute("""
             UPDATE log
@@ -134,19 +97,15 @@ def main():
         conn.commit()
         conn.close()
 
-        reason = classify_skip_reason(date_iso)
-
         msg = (
             f"ℹ️ Evaluation skipped\n\n"
             f"Date: {date_iso}\n"
-            f"Reason: {reason}"
+            f"Reason: no SPY/QQQ cash-session bar available (holiday/weekend or data not posted yet)."
         )
         print(msg)
         send_telegram(msg)
         return
 
-
-    # Reuse the existing naming in the DB columns
     spx_ret = spy_ret
     ndx_ret = qqq_ret
 
@@ -161,28 +120,25 @@ def main():
     conn.commit()
     conn.close()
 
-    # Learning (only when outcome is informative)
     if outcome in ("correct", "incorrect"):
         update_weights(signals, correct=(outcome == "correct"))
-    else:
-        print("No learning applied (flat/no-signal day).")
-
-    print(f"{date_iso} | Bias={bias} | SPY(O->C)={spx_ret:.2f}% | QQQ(O->C)={ndx_ret:.2f}% | Outcome={outcome}")
 
     msg = (
-        f"✅ Evaluation (NY RTH proxy)\n\n"
+        f"✅ Evaluation (NY cash proxy)\n\n"
         f"Date: {date_iso}\n"
         f"Bias: {bias}\n"
         f"Outcome: {outcome}\n\n"
         f"SPY (O->C): {spx_ret:.2f}%\n"
         f"QQQ (O->C): {ndx_ret:.2f}%"
     )
+    print(msg)
     send_telegram(msg)
 
 if __name__ == "__main__":
     main()
 
     
+
 
 
 
