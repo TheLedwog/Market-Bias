@@ -91,12 +91,6 @@ def main():
 
     # 1) Fetch news and extract AI signals + briefing
     news = fetch_news()
-    #####################debug##################
-    analysis["debug"] = {
-    "news_chars": len(news),
-    "news_preview": news[:180]  # first ~180 chars
-    }
-    #################################################
     analysis = extract_signals(news)
     ####################debug#########
     analysis["debug"]["signal_counts"] = {
@@ -189,5 +183,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
