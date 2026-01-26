@@ -14,7 +14,7 @@ def find_spx_up_down_probs_for_today() -> dict | None:
     """
     ny_date = _ny_today()
     # Polymarket titles usually look like: "S&P 500 (SPX) Up or Down on January 26?"
-    date_str = ny_date.strftime("%B %-d") if "%" in "%-" else ny_date.strftime("%B %d").replace(" 0", " ")
+    date_str = f"{ny_date.strftime('%B')} {ny_date.day}"
     query = f"S&P 500 (SPX) Up or Down on {date_str}"
 
     try:
@@ -30,6 +30,7 @@ def find_spx_up_down_probs_for_today() -> dict | None:
 
     events = data.get("events") or []
     if not events:
+        print(f"⚠️ Polymarket search returned 0 events for query: {query}", flush=True)
         return None
 
     # Choose best matching event by title contains query (case-insensitive), then max volume
@@ -105,3 +106,4 @@ def find_spx_up_down_probs_for_today() -> dict | None:
         "title": best_event.get("title") or "",
         "event_slug": best_event.get("slug") or ""
     }
+
