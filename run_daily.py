@@ -92,13 +92,6 @@ def main():
     # 1) Fetch news and extract AI signals + briefing
     news = fetch_news()
     analysis = extract_signals(news)
-    ####################debug#########
-    analysis["debug"]["signal_counts"] = {
-    "bullish": sum(1 for v in analysis.get("signals", {}).values() if str(v).lower() == "bullish"),
-    "bearish": sum(1 for v in analysis.get("signals", {}).values() if str(v).lower() == "bearish"),
-    "neutral": sum(1 for v in analysis.get("signals", {}).values() if str(v).lower() == "neutral"),
-    }
-    ###################################
     analysis.setdefault("signals", {})
     analysis.setdefault("drivers", [])
     analysis.setdefault("key_risk", "")
@@ -108,11 +101,6 @@ def main():
     # 2) Base score from your discrete AI signals + weights
     weights = load_weights(WEIGHTS_PATH)
     score_base = score_signals(analysis["signals"], weights)
-
-    ###########debug#############
-    top = contribution_breakdown(analysis["signals"], weights)
-    analysis["debug"]["top_contrib"] = top
-    #############################
 
     
     # 3) Polymarket numeric boost (crowd tilt)
@@ -183,6 +171,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
