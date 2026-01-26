@@ -1,30 +1,36 @@
 import json
 
-DIRECTION_MAP = {
-    "bullish": 1,
-    "neutral": 0,
-    "bearish": -1
-}
-
-def load_weights():
-    with open("config/signal_weights.json", "r") as f:
+def load_weights(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def compute_bias(signals: dict):
-    weights = load_weights()
-    score = 0
+def score_signals(signals: dict, weights: dict) -> float:
+    """
+    Map: bullish=+1, bearish=-1, neutral/unknown=0
+    Weighted sum.
+    """
+    total = 0.0
+    for k, v in signals.items():
+        w = float(weights.get(k, 0.0))
+        vv = (v or "").strip().lower()
+        if vv == "bullish":
+            total += w
+        elif vv == "bearish":
+            total -= w
+    return total
 
-    for signal, direction in signals.items():
-        score += weights[signal] * DIRECTION_MAP.get(direction, 0)
+def bias_from_score(score: float) -> tuple[str, float]:
+    """
+    Returns bias + confidence %
+    """
+    if score > 0:
+        bias = "Bullish"
+    elif score < 0:
+        bias = "Bearish"
+    else:
+        bias = "No Trade"
 
-    # Always output bullish/bearish
-    bias = "Bullish" if score >= 0 else "Bearish"
+    # Simple confidence mapping
+    conf = min(0.99, abs(score) / 4.0)  # tune as you like
+    return bias, conf * 100.0
 
-    # Confidence: stronger magnitude = higher confidence
-    confidence = min(abs(score) / 0.8, 1.0) * 100
-
-    # If score is extremely close to 0, cap confidence low (avoid fake certainty)
-    if abs(score) < 0.10:
-        confidence = max(confidence, 15.0)
-
-    return bias, round(confidence, 1), score
