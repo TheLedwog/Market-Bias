@@ -75,6 +75,8 @@ def main():
 
     # --- Polymarket SPX up/down signal ---
     pm = find_spx_up_down_probs_for_today()
+    print("DEBUG Polymarket:", pm, flush=True)
+
     if pm:
         p_up = pm["up"]
         p_down = pm["down"]
@@ -127,3 +129,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
