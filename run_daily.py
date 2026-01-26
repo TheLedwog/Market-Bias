@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from agent.signal_extractor import extract_signals
 from agent.bias_engine import load_weights, score_signals, bias_from_score
-from agent.polymarket import find_spx_up_down_probs_for_today
+from agent.polymarket import get_spx_up_down_probs_for_today
 from delivery.telegram import send_telegram
 
 DB_PATH = "memory/daily_log.db"
@@ -88,7 +88,7 @@ def main():
 
     # 3) Polymarket numeric boost (crowd tilt)
     pm_boost = 0.0
-    pm = find_spx_up_down_probs_for_today()
+    pm = get_spx_up_down_probs_for_today()
 
     if pm and "up" in pm and "down" in pm:
         p_up = float(pm["up"])
@@ -154,3 +154,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
