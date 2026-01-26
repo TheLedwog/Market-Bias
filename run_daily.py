@@ -70,6 +70,20 @@ def log_decision(date_iso: str, bias: str, confidence: float, analysis: dict, sc
 def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
+def contribution_breakdown(signals: dict, weights: dict):
+    rows = []
+    for k, v in (signals or {}).items():
+        w = float(weights.get(k, 0.0))
+        vv = (v or "").strip().lower()
+        if vv == "bullish":
+            rows.append((k, +w))
+        elif vv == "bearish":
+            rows.append((k, -w))
+        else:
+            rows.append((k, 0.0))
+    # sort by absolute impact
+    rows.sort(key=lambda x: abs(x[1]), reverse=True)
+    return rows[:5]
 
 def main():
     init_db()
@@ -77,15 +91,36 @@ def main():
 
     # 1) Fetch news and extract AI signals + briefing
     news = fetch_news()
+    #####################debug##################
+    analysis["debug"] = {
+    "news_chars": len(news),
+    "news_preview": news[:180]  # first ~180 chars
+    }
+    #################################################
     analysis = extract_signals(news)
+    ####################debug#########
+    analysis["debug"]["signal_counts"] = {
+    "bullish": sum(1 for v in analysis.get("signals", {}).values() if str(v).lower() == "bullish"),
+    "bearish": sum(1 for v in analysis.get("signals", {}).values() if str(v).lower() == "bearish"),
+    "neutral": sum(1 for v in analysis.get("signals", {}).values() if str(v).lower() == "neutral"),
+    }
+    ###################################
     analysis.setdefault("signals", {})
     analysis.setdefault("drivers", [])
     analysis.setdefault("key_risk", "")
+    
+    
 
     # 2) Base score from your discrete AI signals + weights
     weights = load_weights(WEIGHTS_PATH)
     score_base = score_signals(analysis["signals"], weights)
 
+    ###########debug#############
+    top = contribution_breakdown(analysis["signals"], weights)
+    analysis["debug"]["top_contrib"] = top
+    #############################
+
+    
     # 3) Polymarket numeric boost (crowd tilt)
     pm_boost = 0.0
     pm = get_spx_up_down_probs_for_today()
@@ -154,4 +189,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
