@@ -42,7 +42,7 @@ def fetch_stooq_open_close_return(symbol: str, date_iso: str):
     return None
 
 def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
-    THRESH = 0.25
+    THRESH = 0.15
 
     def direction(x: float) -> str:
         if x > THRESH:
@@ -138,6 +138,7 @@ if __name__ == "__main__":
     main()
 
     
+
 
 
 
