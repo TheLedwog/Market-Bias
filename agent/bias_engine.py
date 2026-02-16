@@ -31,8 +31,9 @@ def bias_from_score(score: float) -> tuple[str, float]:
         bias = "No Trade"
 
     # Simple confidence mapping
-    conf = min(0.99, abs(score) / 2)  # tune as you like
+    conf = min(0.99, abs(score) / 2.75)  # tune as you like
     return bias, conf * 100.0
+
 
 
 
