@@ -2,7 +2,8 @@ name: US Futures Evaluation
 
 on:
   schedule:
-    - cron: "30 21 * * 1-5" # 22:30 UTC, Mon–Fri
+    - cron: "30 22 * * 1-5" # 22:30 UTC, Mon–Fri
+      timezone: "Europe/London"
   workflow_dispatch:
 
 permissions:
