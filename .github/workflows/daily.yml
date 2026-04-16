@@ -2,7 +2,8 @@ name: Daily US Futures Bias
 
 on:
   schedule:
-    - cron: "20 12 * * 1-5" # 14:20 UTC, Mon–Fri
+    - cron: "30 14 * * 1-5" # 14:20 UTC, Mon–Fri
+      timezone: "Europe/London"
   workflow_dispatch:
 
 permissions:
