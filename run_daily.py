@@ -28,6 +28,7 @@ def init_db():
       spx_close_return REAL,
       ndx_close_return REAL,
       outcome TEXT
+      eval_attempts INTEGER DEFAULT 0
     )
     """)
     conn.commit()
