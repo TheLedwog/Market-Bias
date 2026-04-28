@@ -150,6 +150,13 @@ def main():
 
     if outcome in ("correct", "incorrect"):
         update_weights(signals, correct=(outcome == "correct"))
+        
+        c.execute("""
+            UPDATE log
+            SET eval_attempts=0
+            WHERE date=?
+        """, (date_iso,))
+        conn.commit()
 
     msg = (
         f"✅ Evaluation (NY cash proxy)\n\n"
