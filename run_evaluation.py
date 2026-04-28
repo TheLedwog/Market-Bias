@@ -2,6 +2,7 @@ import sqlite3
 import json
 import requests
 from datetime import datetime, timedelta
+import os
 
 from agent.learner import update_weights
 from delivery.telegram import send_telegram
@@ -13,6 +14,30 @@ DB_PATH = "memory/daily_log.db"
 
 STOOQ_CSV = "https://stooq.com/q/d/l/?s={symbol}&i=d"  # daily bars CSV
 
+
+def init_db():
+    os.makedirs("memory", exist_ok=True)
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS log (
+      date TEXT PRIMARY KEY,
+      bias TEXT,
+      confidence REAL,
+      signals TEXT,
+      score REAL,
+      spx_close_return REAL,
+      ndx_close_return REAL,
+      outcome TEXT,
+      eval_attempts INTEGER DEFAULT 0
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+    
 def get_last_unscored_day(conn):
     c = conn.cursor()
     c.execute("SELECT date, bias, signals FROM log WHERE outcome IS NULL ORDER BY date ASC LIMIT 1")
@@ -66,7 +91,7 @@ def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
 
 def main():
     print("✅ run_evaluation.py started", flush=True)
-
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     row = get_last_unscored_day(conn)
 
