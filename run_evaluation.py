@@ -87,21 +87,15 @@ def main():
     qqq_ret = fetch_stooq_open_close_return("QQQ.US", date_iso)
 
     if spy_ret is None or qqq_ret is None:
-        outcome = "no_cash_session"
-        c = conn.cursor()
-        c.execute("""
-            UPDATE log
-            SET spx_close_return=?, ndx_close_return=?, outcome=?
-            WHERE date=?
-        """, (spy_ret, qqq_ret, outcome, date_iso))
-        conn.commit()
         conn.close()
 
         msg = (
-            f"ℹ️ Evaluation skipped\n\n"
+            f"ℹ️ Evaluation delayed\n\n"
             f"Date: {date_iso}\n"
-            f"Reason: no SPY/QQQ cash-session bar available (holiday/weekend or data not posted yet)."
+            f"Reason: SPY/QQQ cash-session data is not available yet.\n\n"
+            f"The row has NOT been marked as scored, so the bot will retry on the next evaluation run."
         )
+
         print(msg)
         send_telegram(msg)
         return
