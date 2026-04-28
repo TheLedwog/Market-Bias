@@ -87,14 +87,48 @@ def main():
     qqq_ret = fetch_stooq_open_close_return("QQQ.US", date_iso)
 
     if spy_ret is None or qqq_ret is None:
+        c = conn.cursor()
+
+        # Get current attempts
+        c.execute("SELECT eval_attempts FROM log WHERE date=?", (date_iso,))
+        row_attempts = c.fetchone()
+        attempts = row_attempts[0] if row_attempts and row_attempts[0] is not None else 0
+
+        attempts += 1
+
+        # Update attempts count
+        c.execute("""
+            UPDATE log
+            SET eval_attempts=?
+            WHERE date=?
+        """, (attempts, date_iso))
+        conn.commit()
         conn.close()
 
-        msg = (
-            f"ℹ️ Evaluation delayed\n\n"
-            f"Date: {date_iso}\n"
-            f"Reason: SPY/QQQ cash-session data is not available yet.\n\n"
-            f"The row has NOT been marked as scored, so the bot will retry on the next evaluation run."
-        )
+        # If still retrying
+        if attempts < 3:
+            msg = (
+                f"ℹ️ Evaluation delayed\n\n"
+                f"Date: {date_iso}\n"
+                f"Attempt: {attempts}/3\n"
+                f"Reason: SPY/QQQ data not available yet.\n"
+                f"Will retry automatically."
+            )
+        else:
+            # 🚨 Escalation message
+            msg = (
+                f"🚨 Evaluation FAILED after retries\n\n"
+                f"Date: {date_iso}\n"
+                f"Attempts: {attempts}\n\n"
+                f"SPY/QQQ data STILL not available.\n\n"
+                f"Possible causes:\n"
+                f"- Stooq API failure\n"
+                f"- Symbol issue (SPY.US / QQQ.US)\n"
+                f"- Date mismatch\n"
+                f"- Market holiday logic wrong\n"
+                f"- Parsing error\n\n"
+                f"Manual investigation required."
+            )
 
         print(msg)
         send_telegram(msg)
