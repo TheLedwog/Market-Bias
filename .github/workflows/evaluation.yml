@@ -44,6 +44,7 @@ jobs:
 
       - name: Commit memory + weights
         run: |
-          git add memory/daily_log.db config/signal_weights.json || true
+          git add -f memory/daily_log.db
+          git add config/signal_weights.json || true
           git commit -m "Update memory + weights (evaluation)" || echo "No changes to commit"
           git push
