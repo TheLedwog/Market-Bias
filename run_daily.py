@@ -3,6 +3,7 @@ import sqlite3
 import json
 import requests
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from agent.signal_extractor import extract_signals
 from agent.bias_engine import load_weights, score_signals, bias_from_score
@@ -88,7 +89,7 @@ def contribution_breakdown(signals: dict, weights: dict):
 
 def main():
     init_db()
-    date_iso = datetime.now(timezone.utc).date().isoformat()
+    date_iso = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
 
     # 1) Fetch news and extract AI signals + briefing
     news = fetch_news()
