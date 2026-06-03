@@ -34,8 +34,17 @@ def win_rate(rows):
 
 def fmt_rate(correct, n, rate):
     if rate is None:
-        return "n/a (no graded days)"
-    return f"{rate:.0f}%  ({correct}/{n})"
+        return "n/a"
+    return f"{rate:.0f}% ({correct}/{n})"
+
+
+def week_label(iso_year, iso_week):
+    """Human-readable Mon–Fri range for an ISO week, e.g. '2–6 Jun 2026'."""
+    mon = date.fromisocalendar(iso_year, iso_week, 1)
+    fri = date.fromisocalendar(iso_year, iso_week, 5)
+    if mon.month == fri.month:
+        return f"{mon.day}–{fri.day} {fri:%b %Y}"
+    return f"{mon.day} {mon:%b} – {fri.day} {fri:%b %Y}"
 
 
 def main():
@@ -95,23 +104,22 @@ def main():
     elif bear5 > bull5:
         lean = "Bearish"
     else:
-        lean = "Mixed / no clear lean"
+        lean = "Mixed"
 
     last10 = [r for r in reversed(rows) if (r[2] or "") in DECISIVE][:10]
     r10c = sum(1 for r in last10 if r[2] == "correct")
     recent_rate = (r10c / len(last10) * 100.0) if last10 else None
 
+    bull_rate = fmt_rate(bull_c, bull_n, (bull_c / bull_n * 100) if bull_n else None)
+    bear_rate = fmt_rate(bear_c, bear_n, (bear_c / bear_n * 100) if bear_n else None)
+
     lines = [
-        "📊 Weekly Market-Bias report",
-        f"Week of {today.isoformat()} (ISO week {iso_week})",
+        "📊 <b>Weekly Bias Report</b>",
+        week_label(iso_year, iso_week),
         "",
-        f"This week:  {fmt_rate(wc, wn, wr)}",
-        f"All-time:   {fmt_rate(oc, on, orate)}",
-        "",
-        "Accuracy by call (all-time):",
-        f"• Bullish: {fmt_rate(bull_c, bull_n, (bull_c / bull_n * 100) if bull_n else None)}",
-        f"• Bearish: {fmt_rate(bear_c, bear_n, (bear_c / bear_n * 100) if bear_n else None)}",
-        f"Current streak: {streak_txt}",
+        "<b>Win rate</b>",
+        f"This week — {fmt_rate(wc, wn, wr)}",
+        f"All-time — {fmt_rate(oc, on, orate)}",
     ]
 
     ungraded = []
@@ -122,23 +130,34 @@ def main():
     if week_pending:
         ungraded.append(f"{week_pending} pending")
     if ungraded:
-        lines.append(f"This week (ungraded): {', '.join(ungraded)}")
+        lines.append(f"Ungraded — {', '.join(ungraded)}")
 
     lines += [
         "",
-        "🔮 Lean for next week (weak heuristic — not a forecast):",
-        f"• {lean}  (last 5 calls: {bull5} bullish / {bear5} bearish)",
+        "<b>By call</b> (all-time)",
+        f"Bullish — {bull_rate}",
+        f"Bearish — {bear_rate}",
+        f"Streak — {streak_txt}",
+        "",
+        f"🔮 <b>Next week: {lean}</b>",
     ]
-    if recent_rate is not None:
-        lines.append(f"• Recent reliability: {recent_rate:.0f}% over last {len(last10)} graded days")
-    lines.append(
-        "Treat as low-confidence context — the bot reacts to each morning's news "
-        "and does not actually forecast a week ahead."
-    )
+
+    if lean == "Mixed":
+        lines.append(f"No clear lean · last 5 calls {bull5} bull / {bear5} bear")
+    else:
+        detail = f"Low confidence · last 5 calls {bull5} bull / {bear5} bear"
+        if recent_rate is not None:
+            detail += f" · recent form {recent_rate:.0f}%"
+        lines.append(detail)
+
+    lines += [
+        "",
+        "<i>Weak heuristic, not a forecast — the bot reacts to each morning's news.</i>",
+    ]
 
     msg = "\n".join(lines)
     print(msg)
-    send_telegram(msg)
+    send_telegram(msg, parse_mode="HTML")
 
 
 if __name__ == "__main__":
