@@ -1,12 +1,7 @@
 # Running Market-Bias on a Raspberry Pi
 
-This moves the **scheduling** off GitHub Actions and onto your Pi using `cron`.
-Nothing about the bot itself changes — it still fetches news, scores signals,
-posts to Telegram, evaluates, and learns. The Pi just decides *when* to run.
+This moves the **scheduling** off GitHub Actions and onto your Pi.
 
-The Pi wrapper does the exact same git cycle the workflows did
-(`pull → run → commit → push`), so the GitHub repo stays the source of truth
-and you can revert to Actions at any time without losing history.
 
 ## One-time setup
 
