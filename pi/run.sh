@@ -9,6 +9,7 @@
 #
 # Usage:  run.sh daily   ->  run_daily.py
 #         run.sh eval    ->  run_evaluation.py
+#         run.sh weekly  ->  run_weekly.py
 #
 set -uo pipefail
 
@@ -25,9 +26,10 @@ LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
 case "$MODE" in
-  daily) SCRIPT="run_daily.py";      LOG="$LOG_DIR/daily.log" ;;
-  eval)  SCRIPT="run_evaluation.py"; LOG="$LOG_DIR/evaluation.log" ;;
-  *) echo "Usage: $0 daily|eval" >&2; exit 2 ;;
+  daily)  SCRIPT="run_daily.py";      LOG="$LOG_DIR/daily.log" ;;
+  eval)   SCRIPT="run_evaluation.py"; LOG="$LOG_DIR/evaluation.log" ;;
+  weekly) SCRIPT="run_weekly.py";     LOG="$LOG_DIR/weekly.log" ;;
+  *) echo "Usage: $0 daily|eval|weekly" >&2; exit 2 ;;
 esac
 
 # Prefer the project venv; fall back to system python3 if it's missing.

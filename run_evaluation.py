@@ -145,9 +145,9 @@ def main():
 
     rows = get_unscored_days(conn)
     if not rows:
-        msg = "ℹ️ Evaluation complete\nNo unscored days found."
-        print(msg)
-        send_telegram(msg)
+        # No-op run (everything already scored) -- log it but stay silent so the
+        # fallback cron slots don't spam Telegram on a normal night.
+        print("ℹ️ Evaluation complete: no unscored days found.")
         conn.close()
         return
 
@@ -226,7 +226,12 @@ def main():
 
     msg = "\n".join(lines)
     print(msg)
-    send_telegram(msg)
+
+    # Only notify when something meaningful happened: a day was scored, or a day
+    # was finally given up on. A run that only bumped still-retrying "delayed"
+    # days stays silent, so late-data fallback slots don't ping every night.
+    if scored or skipped:
+        send_telegram(msg)
 
 if __name__ == "__main__":
     main()

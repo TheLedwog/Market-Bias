@@ -80,6 +80,8 @@ CRON_BLOCK="$MARK_BEGIN
 30 14 * * 1-5 $RUN daily
 # Evaluation  -- weekdays 22:30, 23:30, 01:30 local (retry slots for late data)
 30 1,22,23 * * 1-5 $RUN eval
+# Weekly report -- Friday 23:00 local (after Friday's eval has scored)
+0 23 * * 5 $RUN weekly
 $MARK_END"
 
 # Strip any previous block, then append the fresh one.
