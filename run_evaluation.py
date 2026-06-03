@@ -48,17 +48,28 @@ def init_db():
     conn.commit()
     conn.close()
     
-def get_last_unscored_day(conn):
+def get_unscored_days(conn):
+    """All unscored days, oldest first, so one run can drain the whole queue."""
     c = conn.cursor()
-    c.execute("SELECT date, bias, signals FROM log WHERE outcome IS NULL ORDER BY date ASC LIMIT 1")
-    return c.fetchone()
+    c.execute("SELECT date, bias, signals FROM log WHERE outcome IS NULL ORDER BY date ASC")
+    return c.fetchall()
 
-def fetch_open_close_return(symbol: str, date_iso: str):
-    """Open->close % return for `symbol` on `date_iso`, via Yahoo Finance.
 
-    Returns None if the day isn't present yet (e.g. data not posted) or the
-    response can't be parsed.
+# Per-run cache of the daily-bars series, keyed by symbol. Draining the queue
+# means looking up many dates; without this we'd re-download the same 3mo series
+# once per (day, symbol) pair.
+_series_cache = {}
+
+
+def _get_series(symbol: str):
+    """Fetch & cache `symbol`'s daily bars once per run as {date_iso: (open, close)}.
+
+    Lets network/HTTP errors propagate (the cron slot fails and retries later),
+    but returns {} if the payload is present-but-unparseable.
     """
+    if symbol in _series_cache:
+        return _series_cache[symbol]
+
     url = YAHOO_CHART.format(symbol=symbol)
     r = requests.get(
         url,
@@ -75,17 +86,32 @@ def fetch_open_close_return(symbol: str, date_iso: str):
         opens = quote["open"]
         closes = quote["close"]
     except (KeyError, IndexError, TypeError):
-        return None
+        _series_cache[symbol] = {}
+        return {}
 
-    target = datetime.fromisoformat(date_iso).date()
-
+    series = {}
     for ts, o, c in zip(timestamps, opens, closes):
         # Daily bars are timestamped at the exchange open; for US markets that
         # always falls on the same calendar day in UTC.
-        d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
-        if d == target and o and c:
-            return (c - o) / o * 100.0
+        d = datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+        series[d] = (o, c)
 
+    _series_cache[symbol] = series
+    return series
+
+
+def fetch_open_close_return(symbol: str, date_iso: str):
+    """Open->close % return for `symbol` on `date_iso`, via Yahoo Finance.
+
+    Returns None if the day isn't present yet (e.g. data not posted) or the
+    response can't be parsed.
+    """
+    bar = _get_series(symbol).get(date_iso)
+    if not bar:
+        return None
+    o, c = bar
+    if o and c:
+        return (c - o) / o * 100.0
     return None
 
 def judge_outcome(bias: str, spx_ret: float, ndx_ret: float) -> str:
@@ -115,99 +141,90 @@ def main():
     print("✅ run_evaluation.py started", flush=True)
     init_db()
     conn = sqlite3.connect(DB_PATH)
-    row = get_last_unscored_day(conn)
+    c = conn.cursor()
 
-    if not row:
+    rows = get_unscored_days(conn)
+    if not rows:
         msg = "ℹ️ Evaluation complete\nNo unscored days found."
         print(msg)
         send_telegram(msg)
         conn.close()
         return
 
-    date_iso, bias_raw, signals_json = row
-    bias = (bias_raw or "").strip().lower()
+    # Drain the whole queue in one run. Each day is independent: a day whose data
+    # isn't ready yet (e.g. today, before the US close) goes to retry/skip without
+    # blocking the older days behind it. The single connection stays open across
+    # the loop (the old code closed it before resetting eval_attempts, which would
+    # have raised on a decisive outcome).
+    scored = []   # (date, bias, outcome, spy_ret, qqq_ret)
+    delayed = []  # (date, attempts)
+    skipped = []  # (date, attempts)
 
-    analysis = json.loads(signals_json)
-    signals = analysis.get("signals", {})
+    for date_iso, bias_raw, signals_json in rows:
+        bias = (bias_raw or "").strip().lower()
 
-    spy_ret = fetch_open_close_return("SPY", date_iso)
-    qqq_ret = fetch_open_close_return("QQQ", date_iso)
+        try:
+            analysis = json.loads(signals_json) if signals_json else {}
+        except (TypeError, ValueError):
+            analysis = {}
+        signals = analysis.get("signals", {})
 
-    if spy_ret is None or qqq_ret is None:
-        c = conn.cursor()
+        spy_ret = fetch_open_close_return("SPY", date_iso)
+        qqq_ret = fetch_open_close_return("QQQ", date_iso)
 
-        # Get current attempts
-        c.execute("SELECT eval_attempts FROM log WHERE date=?", (date_iso,))
-        row_attempts = c.fetchone()
-        attempts = row_attempts[0] if row_attempts and row_attempts[0] is not None else 0
+        if spy_ret is None or qqq_ret is None:
+            c.execute("SELECT eval_attempts FROM log WHERE date=?", (date_iso,))
+            row_attempts = c.fetchone()
+            attempts = row_attempts[0] if row_attempts and row_attempts[0] is not None else 0
+            attempts += 1
 
-        attempts += 1
-
-        if attempts < MAX_EVAL_ATTEMPTS:
-            # Still retrying: bump the counter and leave the day unscored.
-            c.execute("UPDATE log SET eval_attempts=? WHERE date=?", (attempts, date_iso))
+            if attempts < MAX_EVAL_ATTEMPTS:
+                # Still retrying: bump the counter and leave the day unscored.
+                c.execute("UPDATE log SET eval_attempts=? WHERE date=?", (attempts, date_iso))
+                delayed.append((date_iso, attempts))
+            else:
+                # Give up: mark "skipped" so it stops blocking the queue.
+                # Skipped days never update weights (only correct/incorrect do).
+                c.execute(
+                    "UPDATE log SET eval_attempts=?, outcome='skipped' WHERE date=?",
+                    (attempts, date_iso),
+                )
+                skipped.append((date_iso, attempts))
             conn.commit()
-            conn.close()
-            msg = (
-                f"ℹ️ Evaluation delayed\n\n"
-                f"Date: {date_iso}\n"
-                f"Attempt: {attempts}/{MAX_EVAL_ATTEMPTS}\n"
-                f"Reason: SPY/QQQ data not available yet.\n"
-                f"Will retry automatically."
-            )
-        else:
-            # Give up: mark the day "skipped" so it stops blocking the queue.
-            # Skipped days never update weights (only correct/incorrect do).
-            c.execute(
-                "UPDATE log SET eval_attempts=?, outcome='skipped' WHERE date=?",
-                (attempts, date_iso),
-            )
-            conn.commit()
-            conn.close()
-            msg = (
-                f"🚨 Evaluation SKIPPED after retries\n\n"
-                f"Date: {date_iso}\n"
-                f"Attempts: {attempts}\n\n"
-                f"SPY/QQQ data still unavailable (likely too old to fetch).\n"
-                f"Marked as skipped so newer days can be evaluated."
-            )
+            continue
 
-        print(msg)
-        send_telegram(msg)
-        return
-
-    spx_ret = spy_ret
-    ndx_ret = qqq_ret
-
-    outcome = judge_outcome(bias, spx_ret, ndx_ret)
-
-    c = conn.cursor()
-    c.execute("""
-        UPDATE log
-        SET spx_close_return=?, ndx_close_return=?, outcome=?
-        WHERE date=?
-    """, (spx_ret, ndx_ret, outcome, date_iso))
-    conn.commit()
-    conn.close()
-
-    if outcome in ("correct", "incorrect"):
-        update_weights(signals, correct=(outcome == "correct"))
-        
+        outcome = judge_outcome(bias, spy_ret, qqq_ret)
         c.execute("""
             UPDATE log
-            SET eval_attempts=0
+            SET spx_close_return=?, ndx_close_return=?, outcome=?
             WHERE date=?
-        """, (date_iso,))
-        conn.commit()
+        """, (spy_ret, qqq_ret, outcome, date_iso))
 
-    msg = (
-        f"✅ Evaluation (NY cash proxy)\n\n"
-        f"Date: {date_iso}\n"
-        f"Bias: {bias}\n"
-        f"Outcome: {outcome}\n\n"
-        f"SPY (O->C): {spx_ret:.2f}%\n"
-        f"QQQ (O->C): {ndx_ret:.2f}%"
-    )
+        if outcome in ("correct", "incorrect"):
+            update_weights(signals, correct=(outcome == "correct"))
+            c.execute("UPDATE log SET eval_attempts=0 WHERE date=?", (date_iso,))
+
+        conn.commit()
+        scored.append((date_iso, bias, outcome, spy_ret, qqq_ret))
+
+    conn.close()
+
+    # One summary message instead of spamming a Telegram per day.
+    lines = ["✅ Evaluation run (NY cash proxy)"]
+    if scored:
+        lines.append("\nScored:")
+        for d, b, o, s, q in scored:
+            lines.append(f"• {d} {b} → {o} (SPY {s:+.2f}%, QQQ {q:+.2f}%)")
+    if delayed:
+        lines.append("\nDelayed (data not ready, will retry):")
+        for d, a in delayed:
+            lines.append(f"• {d} (attempt {a}/{MAX_EVAL_ATTEMPTS})")
+    if skipped:
+        lines.append("\nSkipped (gave up after retries):")
+        for d, a in skipped:
+            lines.append(f"• {d} (attempts {a})")
+
+    msg = "\n".join(lines)
     print(msg)
     send_telegram(msg)
 
