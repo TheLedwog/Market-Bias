@@ -13,11 +13,11 @@ print("✅ run_evaluation.py started", flush=True)
 
 DB_PATH = "memory/daily_log.db"
 
-# After this many failed evaluation attempts, give up on a day and mark it
-# "skipped" so it stops blocking newer days (the queue always processes the
-# OLDEST unscored day, so one permanently-unfetchable day wedges everything
-# behind it). Evaluation runs ~3x per weekday, so 6 ≈ two trading days.
-MAX_EVAL_ATTEMPTS = 6
+# Try a day once, then retry on failure up to this many attempts total. After
+# that, give up and mark the day "skipped" so it stops blocking newer days (the
+# queue always processes the OLDEST unscored day, so one permanently-unfetchable
+# day would otherwise wedge everything behind it).
+MAX_EVAL_ATTEMPTS = 3
 
 # Yahoo Finance daily-bars chart API (keyless). Stooq's CSV endpoint now
 # requires an API key and returns a "Get your apikey" message instead of data.
