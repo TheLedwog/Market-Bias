@@ -17,10 +17,39 @@ DECISIVE = ("correct", "incorrect")
 def fetch_rows():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT date, bias, outcome FROM log ORDER BY date ASC")
+    # confidence appended last so existing r[0..2] indexing is unaffected.
+    c.execute("SELECT date, bias, outcome, confidence FROM log ORDER BY date ASC")
     rows = c.fetchall()
     conn.close()
     return rows
+
+
+def confidence_calibration(rows):
+    """Brier score + a reliability table over graded days with a confidence.
+
+    Brier = mean((confidence/100 - was_correct)^2); lower is better, and it
+    rewards being bold when right and humble when wrong. The buckets show, for
+    each stated-confidence band, what the calls in it actually delivered -- so
+    you can watch the calibrated confidence converge on reality over time.
+    Returns None until at least one graded day carries a confidence value.
+    """
+    graded = [
+        (float(r[3]), 1.0 if r[2] == "correct" else 0.0)
+        for r in rows
+        if (r[2] or "") in DECISIVE and r[3] is not None
+    ]
+    if not graded:
+        return None
+
+    brier = sum((conf / 100.0 - outcome) ** 2 for conf, outcome in graded) / len(graded)
+
+    buckets = []
+    for lo, hi in ((0, 50), (50, 70), (70, 90), (90, 101)):
+        band = [o for conf, o in graded if lo <= conf < hi]
+        if band:
+            buckets.append((lo, min(hi, 100), len(band), sum(band) / len(band) * 100.0))
+
+    return brier, buckets
 
 
 def win_rate(rows):
@@ -138,6 +167,20 @@ def main():
         f"Bullish — {bull_rate}",
         f"Bearish — {bear_rate}",
         f"Streak — {streak_txt}",
+    ]
+
+    cal = confidence_calibration(rows)
+    if cal:
+        brier, buckets = cal
+        lines += [
+            "",
+            "<b>Confidence calibration</b> (graded, all-time)",
+            f"Brier — {brier:.3f} (lower is better)",
+        ]
+        for lo, hi, n, actual in buckets:
+            lines.append(f"stated {lo}–{hi}% → {actual:.0f}% actual ({n})")
+
+    lines += [
         "",
         f"🔮 <b>Next week: {lean}</b>",
     ]

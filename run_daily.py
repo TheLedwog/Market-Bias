@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from agent.signal_extractor import extract_signals
-from agent.bias_engine import load_weights, score_signals, bias_from_score
+from agent.bias_engine import load_weights, score_signals, bias_from_score, load_outcome_history
 from agent.polymarket import get_spx_up_down_probs_for_today
 from delivery.telegram import send_telegram
 
@@ -139,8 +139,11 @@ def main():
     # 4) Final score = base + polymarket boost
     score = score_base + pm_boost
 
-    # 5) Convert score -> bias + confidence
-    bias, confidence = bias_from_score(score)
+    # 5) Convert score -> bias + confidence (confidence calibrated against the
+    #    hit-rate of past calls with a similar |score|; today's row isn't logged
+    #    yet, so there's no leakage).
+    history = load_outcome_history(DB_PATH)
+    bias, confidence = bias_from_score(score, history)
 
     # 6) Persist decision
     log_decision(date_iso, bias, confidence, analysis, score)
