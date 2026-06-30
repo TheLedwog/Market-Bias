@@ -52,7 +52,6 @@ News:
         resp = client.chat.completions.create(
             model="gpt-5.5",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
             response_format={"type": "json_object"},
         )
         txt = resp.choices[0].message.content.strip()
