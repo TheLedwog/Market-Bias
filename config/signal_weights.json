@@ -1,13 +1,13 @@
 {
-  "macro_risk_off": 1.03,
-  "macro_risk_on": 0.8199999999999998,
+  "macro_risk_off": 1.06,
+  "macro_risk_on": 0.8499999999999999,
   "inflation_hot": 1.0,
-  "inflation_cooling": 0.8199999999999998,
+  "inflation_cooling": 0.8499999999999999,
   "fed_hawkish": 0.8799999999999999,
   "fed_dovish": 0.9099999999999999,
-  "earnings_positive": 0.5599999999999998,
+  "earnings_positive": 0.5899999999999999,
   "earnings_negative": 0.4099999999999997,
-  "geopolitics_risk": 0.71,
+  "geopolitics_risk": 0.74,
   "liquidity_stress": 1.2100000000000002,
   "polymarket_spx": 0.6,
   "risk_sentiment": 0.0
